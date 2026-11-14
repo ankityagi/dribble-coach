@@ -1,0 +1,54 @@
+# XcodeGen spec. Run `xcodegen generate` (or Scripts/bootstrap.sh) to make DribbleCoach.xcodeproj.
+name: DribbleCoach
+options:
+  bundleIdPrefix: com.ankityagi
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+
+packages:
+  DribbleCore:
+    path: Packages/DribbleCore
+
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+
+targets:
+  DribbleCoach:
+    type: application
+    platform: iOS
+    sources:
+      - path: DribbleCoach
+    dependencies:
+      - package: DribbleCore
+    info:
+      path: Support/Info.plist
+      properties:
+        CFBundleDisplayName: Dribble Coach
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        UIRequiresFullScreen: true
+        NSMicrophoneUsageDescription: Dribble Coach listens for the ball bouncing to count dribbles. Sound stays on this iPhone.
+        NSCameraUsageDescription: Dribble Coach watches your body to coach hands, height and eyes up. Video stays on this iPhone.
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.ankityagi.dribblecoach
+        TARGETED_DEVICE_FAMILY: "1"
+        CODE_SIGN_STYLE: Automatic
+        ENABLE_PREVIEWS: YES
+
+schemes:
+  DribbleCoach:
+    build:
+      targets:
+        DribbleCoach: all
+    run:
+      config: Debug
+    test:
+      config: Debug
