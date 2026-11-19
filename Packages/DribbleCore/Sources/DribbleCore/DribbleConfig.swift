@@ -22,8 +22,68 @@ public struct DribbleConfig: Codable, Equatable, Sendable {
         }
     }
 
+    /// Body tracking: joint confidence, smoothing, subject choice and the frame-rate fallback.
+    public struct Pose: Codable, Equatable, Sendable {
+        /// A joint below this confidence counts as missing.
+        public var minConfidence: Double = 0.3
+        /// Per-joint overrides of `minConfidence`, keyed by `Joint` raw value. Wrists may need lower.
+        public var jointMinConfidence: [String: Double] = [:]
+        /// One Euro filter, in image-height units: the cutoff at rest (Hz), how fast the cutoff
+        /// rises with speed, and the cutoff for the speed estimate itself.
+        public var smoothingMinCutoff: Double = 1.7
+        public var smoothingBeta: Double = 3.0
+        public var smoothingDerivativeCutoff: Double = 1.0
+        /// A joint missing for longer than this restarts its filter, so it doesn't glide in from an old spot.
+        public var jointResetSeconds: Double = 0.3
+        /// Cutoff (Hz) of the plain low-pass on torso length, the body scale.
+        public var scaleCutoff: Double = 0.5
+        /// The subject is followed frame to frame by its root; a root that moved more than this many
+        /// torso lengths since the last frame belongs to someone else.
+        public var maxRootJumpTorsos: Double = 1.0
+        /// With no match for this long, the subject is chosen again as the largest body.
+        public var subjectLostSeconds: Double = 0.5
+        /// Frame rates tried first and fallen back to.
+        public var highFrameRate: Int = 60
+        public var lowFrameRate: Int = 30
+        /// Fall back when the average Vision time per frame stays above this over the window.
+        /// 60 fps leaves about 16.7 ms a frame, so the spec's 25 ms would never trigger in time.
+        public var fallbackAverageSeconds: Double = 0.016
+        public var fallbackWindowSeconds: Double = 2.0
+
+        public init() {}
+
+        public func minConfidence(for joint: Joint) -> Double {
+            jointMinConfidence[joint.rawValue] ?? minConfidence
+        }
+    }
+
+    /// The placement check before the drill. Fractions are of the camera frame, in the portrait view.
+    public struct Placement: Codable, Equatable, Sendable {
+        /// Head (highest of nose, eyes, ears) to lowest ankle, as a share of the frame height.
+        public var minBodyHeightFraction: Double = 0.45
+        public var maxBodyHeightFraction: Double = 0.85
+        /// Body height in torso lengths, for judging distance when the ankles can't be seen.
+        public var bodyHeightPerTorso: Double = 3.2
+        /// A joint closer than this to the top or bottom edge means the kid is too close.
+        public var edgeMargin: Double = 0.03
+        /// The root may sit this far from the middle, as a share of the frame width.
+        public var centerTolerance: Double = 0.15
+        /// Every check must hold this long before placement passes.
+        public var holdSeconds: Double = 1.0
+        /// A failure shorter than this (a dropped frame, a blink of low confidence) doesn't restart the hold.
+        public var failureGraceSeconds: Double = 0.2
+        /// A fix has to be the current one this long before it's spoken.
+        public var fixSettleSeconds: Double = 0.6
+        /// At least this long between any two spoken fixes.
+        public var fixGapSeconds: Double = 3.0
+        /// The same fix is repeated only after this long.
+        public var fixRepeatSeconds: Double = 6.0
+
+        public init() {}
+    }
+
     /// Bump when defaults change, so saved sessions record which tuning produced them.
-    public var version: Int = 1
+    public var version: Int = 2
 
     // Drill
     public var drillSeconds: Double = 30
@@ -58,6 +118,9 @@ public struct DribbleConfig: Codable, Equatable, Sendable {
     public var twoStars: Int = 65
     public var oneStar: Int = 40
     public var weights = Weights()
+
+    public var pose = Pose()
+    public var placement = Placement()
 
     public init() {}
 
