@@ -2,7 +2,7 @@
 
 An iPhone app that coaches a kid through a 30-second dribbling drill. It counts bounces from the sound of the ball, speaks short cues, and ends with a score out of 100. Everything runs on the phone; nothing is sent anywhere. This is a family app for now, run from Xcode.
 
-The full design is in the "Dribble coach v1 spec" doc; the plan below is its summary. This branch covers milestones M0 and M1.
+The full design is in [docs/v1-spec.md](docs/v1-spec.md); the plan below is its summary. This branch covers milestones M0 and M1.
 
 ## The plan
 
@@ -148,4 +148,5 @@ DribbleCoach/                       The iOS app (SwiftUI, SwiftData)
 Packages/DribbleCore/               Pure Swift logic and its tests
   Sources/DribbleCore/              OnsetDetector, Rhythm, Scoring, BounceCounter, Streak, DribbleConfig
 Scripts/bootstrap.sh                Generates and opens the Xcode project
+docs/v1-spec.md                     The full v1 spec
 ```
