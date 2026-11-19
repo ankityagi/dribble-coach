@@ -2,7 +2,7 @@ import SwiftUI
 import UIKit
 import DribbleCore
 
-/// Full-screen container for one drill: sound check, countdown, drill, summary.
+/// Full-screen container for one drill: placement check, countdown, drill, summary.
 struct DrillFlowView: View {
     @Environment(SessionController.self) private var session
 
@@ -12,8 +12,8 @@ struct DrillFlowView: View {
             switch session.phase {
             case .idle:
                 EmptyView()
-            case .soundCheck:
-                SoundCheckView()
+            case .placement:
+                PlacementView()
             case .countdown(let text):
                 Text(text)
                     .font(.system(size: 120, weight: .heavy, design: .rounded))
@@ -49,35 +49,104 @@ struct DrillFlowView: View {
     }
 }
 
-/// Stand-in for the spec's placement check until body tracking lands in M2:
-/// only the sound part runs, by asking for three bounces.
-struct SoundCheckView: View {
+/// The spec's placement check: live camera with an outline to stand in and a checklist.
+/// It moves on by itself: body checks first, then three bounces for the sound check.
+struct PlacementView: View {
     @Environment(SessionController.self) private var session
+    @AppStorage(SettingsKey.debugMode) private var debugMode = false
 
     var body: some View {
-        VStack(spacing: 28) {
-            Image(systemName: "figure.basketball")
-                .font(.system(size: 90))
-                .foregroundStyle(.orange)
-            Text("Bounce the ball 3 times")
-                .font(.largeTitle.bold())
-                .multilineTextAlignment(.center)
-            HStack(spacing: 20) {
-                ForEach(0..<3, id: \.self) { index in
-                    Circle()
-                        .fill(index < session.soundCheckHeard ? Color.green : Color.gray.opacity(0.3))
-                        .frame(width: 36, height: 36)
+        VStack(spacing: 16) {
+            ZStack {
+                CameraPreview(session: session.captureSession)
+                Image(systemName: "figure.stand")
+                    .resizable()
+                    .scaledToFit()
+                    .padding(.vertical, 60)
+                    .foregroundStyle(.white.opacity(session.placementChecks.allPassed ? 0.15 : 0.35))
+                    .allowsHitTesting(false)
+                if debugMode {
+                    SkeletonOverlay(pose: session.pose)
+                }
+                VStack {
+                    Spacer()
+                    Text(headline)
+                        .font(.system(size: 34, weight: .heavy, design: .rounded))
+                        .multilineTextAlignment(.center)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 10)
+                        .background(.black.opacity(0.55), in: RoundedRectangle(cornerRadius: 14))
+                        .padding(.bottom, 16)
                 }
             }
-            Text("Stand back so your whole body fits on the screen. The camera check comes with body tracking.")
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal)
-            Button("Skip the sound check") { session.startCountdown() }
-                .font(.callout)
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+
+            checklist
+
+            if debugMode {
+                VStack(alignment: .leading, spacing: 4) {
+                    PoseDebugText()
+                    Text(String(format: "Body height %@, off center %@",
+                                session.bodyHeightFraction.map { String(format: "%.2f", $0) } ?? "–",
+                                session.centerOffset.map { String(format: "%+.2f", $0) } ?? "–"))
+                        .font(.caption.monospaced())
+                    HStack {
+                        if session.placementStep == .body {
+                            Button("Skip body check") { session.skipBodyCheck() }
+                        }
+                        Button("Skip sound check") { session.startCountdown() }
+                    }
+                    .font(.caption)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
         }
         .padding()
+    }
+
+    private var headline: String {
+        switch session.placementStep {
+        case .body: return session.placementFix?.phrase ?? "Stay there!"
+        case .sound: return "Bounce the ball 3 times"
+        }
+    }
+
+    private var checklist: some View {
+        let checks = session.placementChecks
+        return HStack(spacing: 14) {
+            CheckItem(title: "Body", passed: checks.bodyVisible)
+            CheckItem(title: "Distance", passed: checks.rightDistance)
+            CheckItem(title: "Center", passed: checks.centered)
+            CheckItem(title: "Feet", passed: checks.feetVisible)
+            CheckItem(title: "Sound", passed: session.soundCheckHeard >= 3,
+                      progress: session.placementStep == .sound ? session.soundCheckHeard : nil)
+        }
+    }
+}
+
+private struct CheckItem: View {
+    let title: String
+    let passed: Bool
+    /// Bounces heard so far, for the sound check.
+    var progress: Int?
+
+    var body: some View {
+        VStack(spacing: 4) {
+            if let progress, !passed {
+                Text("\(progress)/3")
+                    .font(.title3.bold().monospacedDigit())
+                    .frame(height: 28)
+            } else {
+                Image(systemName: passed ? "checkmark.circle.fill" : "circle")
+                    .font(.title2)
+                    .foregroundStyle(passed ? .green : .secondary)
+                    .frame(height: 28)
+            }
+            Text(title).font(.caption)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityValue(passed ? "done" : "not yet")
     }
 }
 
@@ -121,6 +190,12 @@ struct DrillView: View {
                 .font(.title3.monospacedDigit())
 
             if debugMode {
+                ZStack {
+                    CameraPreview(session: session.captureSession)
+                    SkeletonOverlay(pose: session.pose)
+                }
+                .frame(height: 220)
+                .clipShape(RoundedRectangle(cornerRadius: 10))
                 DebugPanel()
             }
         }
@@ -153,6 +228,7 @@ struct DebugPanel: View {
             Text("Rhythm (5 s): \(session.liveRhythm.map { String(Int($0.rounded())) } ?? "–")")
             Text("Ignored: \(session.rejectedVoice) voice, \(session.rejectedSpeech) while coach spoke")
             Text("Last onset: \(session.lastOnsetInfo)")
+            PoseDebugText()
         }
         .font(.caption.monospaced())
         .frame(maxWidth: .infinity, alignment: .leading)

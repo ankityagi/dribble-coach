@@ -2,7 +2,7 @@
 
 An iPhone app that coaches a kid through a 30-second dribbling drill. It counts bounces from the sound of the ball, speaks short cues, and ends with a score out of 100. Everything runs on the phone; nothing is sent anywhere. This is a family app for now, run from Xcode.
 
-The full design is in [docs/v1-spec.md](docs/v1-spec.md); the plan below is its summary. This branch covers milestones M0 and M1.
+The full design is in [docs/v1-spec.md](docs/v1-spec.md); the plan below is its summary. This branch covers milestones M0, M1 and M2.
 
 ## The plan
 
@@ -48,8 +48,8 @@ Every second the coach looks at the last 5 seconds and says at most one short cu
 | --- | --- | --- | --- |
 | M0, skeleton app | Xcode project, all screens, config loading | Every screen reachable | Done on this branch, needs a first build on a Mac |
 | M1, bounce counter | Microphone onset detector, live count and rhythm | Count within 5 percent on concrete and wood across 5 home drills | Done on this branch, needs the home check |
-| M2, body tracking | Camera, body pose, debug skeleton, frame-rate fallback, placement check with spoken fixes | Placement passes within 10 s for two kids; 60 fps holds on iPhone 13 Pro or later | Next |
-| M3, fusion and metrics | Wrist matching, eyes up, switching, low, full score | Hand and low targets met on home clips | Planned |
+| M2, body tracking | Camera, body pose, debug skeleton, frame-rate fallback, placement check with spoken fixes | Placement passes within 10 s for two kids; 60 fps holds on iPhone 13 Pro or later | Done on this branch, needs a build on a Mac and the kid check |
+| M3, fusion and metrics | Wrist matching, eyes up, switching, low, full score | Hand and low targets met on home clips | Next |
 | M4, drill and coach | Live cues, interruptions, comparing the two audio modes | Fewer than 1 wrong cue per drill | Planned |
 | M5, debug recorder and replay | Recordings, file replay, Python matcher, replay tests | All 15 clips labeled and in the test suite | Planned |
 | M6, kid test | Two weeks of real use at home, rewording and tuning | Kids finish without help and ask to go again | Planned |
@@ -80,13 +80,14 @@ If the hand target is missed, a small Core ML ball detector trained on these cli
 
 - **M0, skeleton app:** Home (streak, last score, Start), drill picker (crossover, right-hand pound, left-hand pound), drill screen, summary, history, and settings (player name, Home or Gym, coach voice, delete all data, hidden debug mode). Tuning numbers load from `DribbleCoach/Resources/DribbleConfig.json` over the defaults in code.
 - **M1, bounce counter:** the microphone feeds an onset detector that finds ball thumps in 5 ms steps. The drill screen shows the live count, a beat light that flashes on each bounce, and the time left. The summary shows bounces, speed, lost balls and a rhythm score. Drills with a score are saved and feed the streak.
+- **M2, body tracking:** the front camera runs at 1080p and 60 fps where the phone allows. Apple Vision finds bodies in each frame. The app keeps the largest one and follows it by the hips, drops joints below 0.3 confidence, and smooths each joint with a One Euro filter. Distances are measured in torso lengths. If Vision averages more than 16 ms a frame for 2 seconds, the camera drops to 30 fps for the rest of the session. Camera frames and sound are timed on the same host clock, ready for M3 to match bounces to wrists.
+- **Placement check:** before each drill, the camera picture fills the screen with an outline to stand in and a checklist (body, distance, center, feet, sound). The app speaks one fix at a time, in the spec's order: "Step back", "Come closer", "Move left", "Move right", "I can't see your feet", plus "Stand in front of me" when nobody is in view. Left and right are the kid's own. Once every check holds for a second, it locks exposure and white balance and asks for 3 bounces. If the kid walks off during the sound check, it goes back to placing them.
 - **Spoken lines:** "Bounce the ball 3 times", the countdown, "Ten seconds!", "Keep dribbling!" after 3 quiet seconds, and the score at the end. Sound heard while the coach is talking is ignored.
 
 ## Not in this branch yet
 
-- Camera, body tracking and the placement check (M2). For now the drill starts with a sound check: bounce 3 times.
 - Hand switching, dribble height and eyes up (M3). Until then the score is the rhythm score minus lost-ball points, and the other three bars say "Coming with body tracking".
-- The live coach cues such as "Lower!" and "Switch hands!" (M4), debug recordings and the replay harness (M5).
+- The live coach cues such as "Lower!" and "Switch hands!", and pausing when the kid leaves the frame (M4). Debug video recordings and the replay harness (M5).
 
 ## Build and run
 
@@ -97,7 +98,7 @@ brew install xcodegen
 ./Scripts/bootstrap.sh
 ```
 
-That generates `DribbleCoach.xcodeproj` and opens it. In Xcode, pick your team under Signing & Capabilities for the DribbleCoach target, plug in the iPhone, choose it as the run destination, and press Run. The first run asks for the microphone.
+That generates `DribbleCoach.xcodeproj` and opens it. In Xcode, pick your team under Signing & Capabilities for the DribbleCoach target, plug in the iPhone, choose it as the run destination, and press Run. The first run asks for the microphone and the camera.
 
 The project file is generated, so it isn't committed. Run `xcodegen generate` again after adding or moving files.
 
@@ -110,13 +111,30 @@ cd Packages/DribbleCore
 swift test
 ```
 
-The tests cover the onset detector on made-up signals (steady thumps, fast dribbling, close double thumps, a shout, a quiet room), rhythm and lost balls, the score and stars, the streak, and config overrides.
+The tests cover:
+
+- the onset detector on made-up signals: steady thumps, fast dribbling, close double thumps, a shout, a quiet room
+- rhythm and lost balls, the score and stars, the streak, and config overrides
+- for body tracking: the One Euro filter, choosing and following the player, torso scale, the 60 to 30 fps fallback, and every placement fix with its timing
+
+The package builds on Linux too, with the Swift toolchain from swift.org.
 
 ## Try it
 
-1. Put the phone upright on a stand or against a wall, screen facing you, on a hard floor.
-2. Start, pick Crossover, bounce 3 times, and dribble when it says go.
-3. To see what the detector hears, open Settings and tap the version number 5 times to turn on Debug mode. The drill screen then shows the mic level, live speed and rhythm, how many sounds were ignored, and the energy of the last onset.
+1. Put the phone upright on a stand or against a wall, screen facing you, on a hard floor, about 2.5 to 3 m from where you'll dribble.
+2. Start and pick Crossover. Follow the spoken fixes until the outline turns faint, bounce 3 times, and dribble when it says go.
+3. To see what the app sees and hears, open Settings and tap the version number 5 times to turn on Debug mode. Then:
+   - The placement screen draws the tracked skeleton, with the left wrist blue and the right wrist red. It shows the camera and tracking frame rates, Vision time per frame, body height and how far off center you are, plus buttons to skip either check.
+   - The drill screen adds a small camera view with the skeleton, the mic level, live speed and rhythm, ignored sounds and the last onset.
+   - Every raw pose frame is written to `Documents/PoseLogs` as JSON lines. Copy the files off with the Files app or Finder.
+
+### First run on a phone
+
+Things only a real phone can show; check these first:
+
+- **Orientation and mirroring:** with Debug mode on, stand facing the phone and raise your left hand. The blue dot should be on your raised hand and on the left of the screen, and the debug text should say "Orientation: OK". If not, change `PoseService.uprightOrientation`.
+- **Bounces still count with the camera on:** the camera is set not to touch the audio session. If counting gets worse than in M1, that's the first place to look.
+- **Frame rate:** on an iPhone 13 Pro or later, the debug text should show about 60 fps tracking with Vision under 16 ms.
 
 ## Tuning
 
@@ -128,6 +146,21 @@ Change values in `DribbleCoach/Resources/DribbleConfig.json` and rebuild. Any ke
 | `absoluteFloor` | 0.00001 | Quiet taps count | Soft bounces (wood, far from the phone) are missed |
 | `refractorySeconds` | 0.12 | One bounce counts twice | Very fast dribbles are merged |
 | `voiceRatio` | 1.0 | Bounces get ignored as voice | Shouts still count as bounces |
+| `pose.minConfidence` | 0.3 | Joints jump around or land on the wrong spot | Joints keep dropping out (`pose.jointMinConfidence` sets it per joint, such as `{"leftWrist": 0.2}`) |
+| `pose.smoothingMinCutoff` | 1.7 | The skeleton lags a still kid | A still kid's joints shake |
+| `pose.smoothingBeta` | 3.0 | Wrists lag behind fast dribbles | Fast-moving joints shake |
+| `pose.fallbackAverageSeconds` | 0.016 | A phone drops to 30 fps when it doesn't need to | A phone stays at 60 fps but skips frames |
+| `placement.minBodyHeightFraction` | 0.45 | Kids standing too far away still pass | Kids get told "Come closer" at the right spot |
+| `placement.maxBodyHeightFraction` | 0.85 | Kids get told "Step back" at the right spot | Kids too close still pass |
+| `placement.centerTolerance` | 0.15 | Kids get told to move when nearly centered | Kids off to one side still pass |
+
+Nested keys go inside their group in the JSON, for example `"placement": {"centerTolerance": 0.2}`.
+
+The spec's fallback rule is 25 ms a frame, but 60 fps only leaves 16.7 ms. A phone averaging 20 ms would skip frames and never fall back, so the default is 16 ms.
+
+## M2 exit check
+
+From the spec: placement passes within 10 seconds for two kids who follow the spoken fixes, and 60 fps holds on an iPhone 13 Pro or later. Time each kid from the first spoken fix to "Bounce the ball 3 times", and watch the tracking frame rate in Debug mode through a whole drill.
 
 ## M1 exit check
 
@@ -142,11 +175,15 @@ DribbleCoach/                       The iOS app (SwiftUI, SwiftData)
   Model/Models.swift                Drill, Place, DrillResult, SessionRecord
   Services/AudioService.swift       Microphone tap and onset detection
   Services/SpeechService.swift      Spoken lines
+  Services/CaptureService.swift     Front camera, frame times on the host clock, exposure lock
+  Services/PoseService.swift        Vision body pose, tracking, frame-rate fallback
+  Services/PoseLogger.swift         Debug-mode pose log
   Services/SessionController.swift  The drill state machine
-  Views/                            Home, drill flow, summary, history, settings
+  Views/                            Home, placement and drill flow, camera preview and skeleton, summary, history, settings
   Resources/DribbleConfig.json      Tuning overrides
 Packages/DribbleCore/               Pure Swift logic and its tests
-  Sources/DribbleCore/              OnsetDetector, Rhythm, Scoring, BounceCounter, Streak, DribbleConfig
+  Sources/DribbleCore/              OnsetDetector, Rhythm, Scoring, BounceCounter, Streak, DribbleConfig,
+                                    Pose, OneEuroFilter, BodyTracker, FrameRateGovernor, Placement
 Scripts/bootstrap.sh                Generates and opens the Xcode project
 docs/v1-spec.md                     The full v1 spec
 ```

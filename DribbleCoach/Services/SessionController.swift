@@ -4,22 +4,32 @@ import Observation
 import SwiftData
 import DribbleCore
 
-/// The drill state machine from the v1 spec, for M1: sound check, countdown, a timed drill
-/// counted from bounce sounds, and a summary. Placement and body tracking arrive in M2.
+/// The drill state machine from the v1 spec, as of M2: placement check (body, then sound),
+/// countdown, a timed drill counted from bounce sounds, and a summary.
+/// The camera runs from placement to the end; fusion with the bounces arrives in M3.
 @MainActor
 @Observable
 final class SessionController {
     enum Phase: Equatable {
         case idle
-        case soundCheck
+        case placement
         case countdown(String)
         case running
         case summary
         case endedEarly(String)
     }
 
+    /// The placement check stands the kid in the right spot first, then asks for three bounces.
+    enum PlacementStep: Equatable {
+        case body
+        case sound
+    }
+
     var phase: Phase = .idle
     var drill: Drill = .crossover
+    var placementStep: PlacementStep = .body
+    var placementChecks = PlacementChecks()
+    var placementFix: PlacementFix?
     var soundCheckHeard = 0
     var liveCount = 0
     var liveBouncesPerSecond = 0.0
@@ -33,31 +43,54 @@ final class SessionController {
     var rejectedVoice = 0
     var rejectedSpeech = 0
 
+    // Body tracking, refreshed at most 30 times a second for the screen.
+    var pose: BodyPose?
+    var poseFrameRate = 0.0
+    var poseMilliseconds = 0.0
+    var droppedFrames = 0
+    var bodyHeightFraction: Double?
+    var centerOffset: Double?
+    /// The camera's frame rate: 60, or 30 after the fallback or on phones without 60 fps at 1080p.
+    var frameRate = 0
+
     @ObservationIgnored var modelContext: ModelContext?
 
     let config: DribbleConfig
+    /// The camera session, for the preview on screen.
+    var captureSession: AVCaptureSession { capture.session }
+
     private let audio = AudioService()
     private let speech = SpeechService()
+    private let capture = CaptureService()
+    private let poseService: PoseService
+    private let poseLogger = PoseLogger()
     private let counter: BounceCounter
+    private let placement: PlacementChecker
 
     @ObservationIgnored private var flowTask: Task<Void, Never>?
     @ObservationIgnored private var drillStartHost = 0.0
     @ObservationIgnored private var drillStartDate = Date()
     @ObservationIgnored private var lastLevelUpdate = 0.0
-    @ObservationIgnored private var interruptionObserver: NSObjectProtocol?
+    @ObservationIgnored private var lastPoseUpdate = 0.0
+    @ObservationIgnored private var soundStepFailingSince: Double?
+    @ObservationIgnored private var observers: [NSObjectProtocol] = []
 
     var isInDrillFlow: Bool {
         switch phase {
-        case .soundCheck, .countdown, .running: return true
+        case .placement, .countdown, .running: return true
         case .idle, .summary, .endedEarly: return false
         }
     }
+
+    private var debugMode: Bool { UserDefaults.standard.bool(forKey: SettingsKey.debugMode) }
 
     init() {
         let config = DribbleConfig.load(
             overridesAt: Bundle.main.url(forResource: "DribbleConfig", withExtension: "json"))
         self.config = config
         counter = BounceCounter(config: config)
+        placement = PlacementChecker(config: config)
+        poseService = PoseService(config: config)
         secondsLeft = config.drillSeconds
 
         audio.onOnset = { [weak self] onset in
@@ -71,7 +104,25 @@ final class SessionController {
                 self?.counter.setSpeaking(speaking, at: time)
             }
         }
-        interruptionObserver = NotificationCenter.default.addObserver(
+
+        let poseService = poseService
+        let poseLogger = poseLogger
+        capture.onFrame = { buffer, time in
+            poseService.process(buffer, time: time)
+        }
+        poseService.onResult = { [weak self] result in
+            // Logged here on the pose queue so every frame is kept, not just the ones the screen shows.
+            if UserDefaults.standard.bool(forKey: SettingsKey.debugMode) {
+                poseLogger.log(result.frame)
+            }
+            Task { @MainActor in self?.handle(result) }
+        }
+        poseService.onFallback = { [weak self] rate in
+            Task { @MainActor in self?.fallBack(to: rate) }
+        }
+
+        let center = NotificationCenter.default
+        observers.append(center.addObserver(
             forName: AVAudioSession.interruptionNotification, object: nil, queue: .main
         ) { [weak self] note in
             let typeValue = note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt
@@ -79,7 +130,14 @@ final class SessionController {
             MainActor.assumeIsolated {
                 if began { self?.endEarly("The drill stopped because something else used the sound.") }
             }
-        }
+        })
+        observers.append(center.addObserver(
+            forName: AVCaptureSession.runtimeErrorNotification, object: capture.session, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.endEarly("The drill stopped because the camera stopped.")
+            }
+        })
     }
 
     // MARK: - Flow
@@ -93,17 +151,32 @@ final class SessionController {
             phase = .endedEarly(AudioServiceError.permissionDenied.localizedDescription)
             return
         }
+        guard await CaptureService.requestPermission() else {
+            phase = .endedEarly(CaptureServiceError.permissionDenied.localizedDescription)
+            return
+        }
         do {
             try audio.start(config: config)
+            poseService.reset(frameRate: config.pose.highFrameRate)
+            frameRate = try await capture.start(preferredFrameRate: config.pose.highFrameRate)
+            if frameRate < config.pose.highFrameRate {
+                // No 60 fps format at 1080p on this phone: start the governor at 30 too.
+                poseService.reset(frameRate: frameRate)
+            }
         } catch {
+            stopDevices()
             phase = .endedEarly(error.localizedDescription)
             return
         }
+        if debugMode { poseLogger.start(label: drill.rawValue) }
 
+        placement.reset()
+        placementStep = .body
+        placementChecks = PlacementChecks()
+        placementFix = nil
         soundCheckHeard = 0
-        counter.begin(at: HostClock.now(), duration: 3600)
-        phase = .soundCheck
-        speech.say("Bounce the ball 3 times")
+        soundStepFailingSince = nil
+        phase = .placement
     }
 
     func startCountdown() {
@@ -118,12 +191,18 @@ final class SessionController {
         startCountdown()
     }
 
+    /// Skips the body part of placement. Debug mode only, for trying the app at a desk.
+    func skipBodyCheck() {
+        guard phase == .placement, placementStep == .body else { return }
+        startSoundCheck()
+    }
+
     /// Stops everything and goes back to the app. Used by Stop, Done and dismissing the drill.
     func cancel() {
         flowTask?.cancel()
         flowTask = nil
         speech.stopSpeaking()
-        audio.stop()
+        stopDevices()
         phase = .idle
     }
 
@@ -133,8 +212,25 @@ final class SessionController {
         flowTask?.cancel()
         flowTask = nil
         speech.stopSpeaking()
-        audio.stop()
+        stopDevices()
         phase = .endedEarly(reason)
+    }
+
+    private func stopDevices() {
+        audio.stop()
+        capture.stop()
+        poseLogger.stop()
+        pose = nil
+    }
+
+    private func startSoundCheck() {
+        placementStep = .sound
+        soundCheckHeard = 0
+        soundStepFailingSince = nil
+        placementFix = nil
+        capture.lockExposureAndWhiteBalance()
+        counter.begin(at: HostClock.now(), duration: 3600)
+        speech.say("Bounce the ball 3 times")
     }
 
     private func runCountdownAndDrill() async {
@@ -163,11 +259,7 @@ final class SessionController {
             secondsLeft = max(0, config.drillSeconds - elapsed)
             refreshLive(now: now)
 
-            let thermal = ProcessInfo.processInfo.thermalState
-            if thermal == .serious || thermal == .critical {
-                endEarly("The phone got hot, so the drill stopped. Let it cool down and try again.")
-                return
-            }
+            if checkThermal() { return }
             if !tenCalled, elapsed >= config.tenSecondCallAt {
                 tenCalled = true
                 speech.say("Ten seconds!")
@@ -184,7 +276,7 @@ final class SessionController {
     private func finish() {
         let end = drillStartHost + config.drillSeconds
         let stats = counter.drillStats(now: end)
-        // M1 measures rhythm only. Switching, low and eyes up arrive with body tracking in M3.
+        // Rhythm only for now. Switching, low and eyes up arrive with fusion and head tracking in M3.
         let parts = PartScores(rhythm: stats.rhythmScore)
         let score = Scoring.score(parts: parts, bounceCount: stats.count,
                                   lostBalls: stats.lostBalls, config: config)
@@ -203,13 +295,21 @@ final class SessionController {
         }
     }
 
+    /// Ends the drill when the phone gets hot. Returns true if it did.
+    private func checkThermal() -> Bool {
+        let thermal = ProcessInfo.processInfo.thermalState
+        guard thermal == .serious || thermal == .critical else { return false }
+        endEarly("The phone got hot, so the drill stopped. Let it cool down and try again.")
+        return true
+    }
+
     // MARK: - Events
 
     private func handle(_ onset: Onset) {
         lastOnsetInfo = String(format: "energy %.1e, voice ratio %.2f", onset.lowEnergy, onset.voiceRatio)
             + (onset.isLikelyVoice ? " (voice)" : "")
         switch phase {
-        case .soundCheck:
+        case .placement where placementStep == .sound:
             if counter.ingest(onset) {
                 soundCheckHeard += 1
                 beat += 1
@@ -225,6 +325,59 @@ final class SessionController {
         default:
             break
         }
+    }
+
+    private func handle(_ result: PoseResult) {
+        guard isInDrillFlow || phase == .summary else { return }
+        if phase == .placement {
+            updatePlacement(result)
+        }
+
+        // The screen needs no more than 30 updates a second.
+        let now = HostClock.now()
+        guard now - lastPoseUpdate >= 1.0 / 30 else { return }
+        lastPoseUpdate = now
+        pose = result.pose
+        poseFrameRate = result.measuredFrameRate
+        poseMilliseconds = result.processingSeconds * 1000
+        droppedFrames = result.droppedFrames
+    }
+
+    private func updatePlacement(_ result: PoseResult) {
+        let update = placement.update(pose: result.pose, time: result.frame.time)
+        placementChecks = update.checks
+        bodyHeightFraction = update.bodyHeightFraction
+        centerOffset = update.centerOffset
+
+        switch placementStep {
+        case .body:
+            placementFix = update.fix
+            if update.settled {
+                startSoundCheck()
+            } else if let fix = update.speak {
+                speech.say(fix.phrase)
+            }
+        case .sound:
+            // If the kid wanders off during the sound check, go back to placing them.
+            if update.checks.allPassed {
+                soundStepFailingSince = nil
+            } else {
+                let start = soundStepFailingSince ?? result.frame.time
+                soundStepFailingSince = start
+                if result.frame.time - start > config.placement.holdSeconds {
+                    placementStep = .body
+                    placement.reset()
+                    capture.unlockExposureAndWhiteBalance()
+                }
+            }
+        }
+        _ = checkThermal()
+    }
+
+    private func fallBack(to rate: Int) {
+        guard isInDrillFlow || phase == .summary else { return }
+        capture.setFrameRate(rate)
+        frameRate = rate
     }
 
     private func updateLevel(_ level: Float) {
@@ -261,7 +414,7 @@ final class SessionController {
         guard let modelContext else { return }
         let place = Place(rawValue: UserDefaults.standard.string(forKey: SettingsKey.place) ?? "") ?? .home
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
-        let record = SessionRecord(result: result, total: total, place: place, frameRate: 0,
+        let record = SessionRecord(result: result, total: total, place: place, frameRate: frameRate,
                                    deviceModel: Self.deviceModel(), appVersion: version,
                                    configVersion: config.version)
         modelContext.insert(record)

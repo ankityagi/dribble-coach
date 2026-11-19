@@ -121,10 +121,11 @@ struct SettingsView: View {
             }
         }
         .navigationTitle("Settings")
-        .confirmationDialog("Delete every saved drill?", isPresented: $confirmDelete, titleVisibility: .visible) {
+        .confirmationDialog("Delete every saved drill and debug log?", isPresented: $confirmDelete, titleVisibility: .visible) {
             Button("Delete all", role: .destructive) {
                 try? modelContext.delete(model: SessionRecord.self)
                 try? modelContext.save()
+                PoseLogger.deleteAll()
             }
         }
     }

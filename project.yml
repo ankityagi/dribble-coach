@@ -34,6 +34,9 @@ targets:
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
         UIRequiresFullScreen: true
+        # Debug pose logs in Documents show up in the Files app and in Finder.
+        UIFileSharingEnabled: true
+        LSSupportsOpeningDocumentsInPlace: true
         NSMicrophoneUsageDescription: Dribble Coach listens for the ball bouncing to count dribbles. Sound stays on this iPhone.
         NSCameraUsageDescription: Dribble Coach watches your body to coach hands, height and eyes up. Video stays on this iPhone.
     settings:
