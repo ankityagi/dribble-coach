@@ -92,7 +92,7 @@ final class PoseService {
                              measuredFrameRate: governor.measuredFrameRate, droppedFrames: droppedSoFar))
     }
 
-    private static let jointNames: [Joint: VNHumanBodyPoseObservation.JointName] = [
+    private static let jointNames: [DribbleCore.Joint: VNHumanBodyPoseObservation.JointName] = [
         .nose: .nose, .leftEye: .leftEye, .rightEye: .rightEye, .leftEar: .leftEar, .rightEar: .rightEar,
         .neck: .neck, .leftShoulder: .leftShoulder, .rightShoulder: .rightShoulder,
         .root: .root, .leftHip: .leftHip, .rightHip: .rightHip,
@@ -101,9 +101,9 @@ final class PoseService {
     ]
 
     /// Vision's points, mirrored so x grows toward the player's right as on the selfie-style preview.
-    private static func joints(of observation: VNHumanBodyPoseObservation) -> [Joint: JointObservation] {
+    private static func joints(of observation: VNHumanBodyPoseObservation) -> [DribbleCore.Joint: JointObservation] {
         guard let points = try? observation.recognizedPoints(.all) else { return [:] }
-        var result: [Joint: JointObservation] = [:]
+        var result: [DribbleCore.Joint: JointObservation] = [:]
         for (joint, name) in jointNames {
             guard let point = points[name], point.confidence > 0 else { continue }
             result[joint] = JointObservation(x: 1 - Double(point.location.x), y: Double(point.location.y),
