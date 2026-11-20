@@ -68,6 +68,10 @@ struct DrillResult: Equatable {
     let stats: RhythmStats
     let parts: PartScores
     let score: ScoreResult
+    /// How this drill compares with the player's own earlier ones, which is what the kid sees.
+    let progress: ProgressResult
+    let hands: HandSummary
+    let tip: String
     var diagnostics: DrillDiagnostics? = nil
 }
 
@@ -92,6 +96,8 @@ final class SessionRecord {
     var deviceModel: String
     var appVersion: String
     var configVersion: Int
+    /// Times the hand changed between back-to-back bounces. Default keeps older saved drills loading.
+    var switchCount: Int = 0
 
     var drill: Drill { Drill(rawValue: drillRaw) ?? .crossover }
 
@@ -103,7 +109,8 @@ final class SessionRecord {
         placeRaw = place.rawValue
         durationSeconds = result.duration
         totalScore = total
-        stars = result.score.stars
+        stars = result.progress.stars
+        switchCount = result.hands.switches
         rhythmScore = result.parts.rhythm
         switchingScore = result.parts.switching
         lowScore = result.parts.low

@@ -295,6 +295,19 @@ final class SessionController {
         let parts = PartScores(rhythm: stats.rhythmScore)
         let score = Scoring.score(parts: parts, bounceCount: stats.count,
                                   lostBalls: stats.lostBalls, config: config)
+        // What the kid sees: their bounces, hand switches, and how this compares with their own earlier drills.
+        let countedHands: [Hand?] = fusedLog
+            .filter { $0.confirmed && $0.time >= 0 && $0.time <= config.drillSeconds }
+            .sorted { $0.time < $1.time }
+            .map { $0.hand.flatMap { Hand(rawValue: $0) } }
+        let target: Hand? = drill == .rightPound ? .right : drill == .leftPound ? .left : nil
+        let hands = Hands.summarize(countedHands, target: target)
+        let progress = Progress.evaluate(bounces: stats.count, previous: previousBounces(for: drill),
+                                         minBounces: config.minBouncesForScore)
+        let tip = Tips.choose(
+            lostBalls: stats.lostBalls, spread: stats.spread,
+            switchShare: drill == .crossover ? hands.switchShare(minPairs: config.minKnownHandPairs) : nil,
+            targetShare: target == nil ? nil : hands.targetShare(minKnown: config.minKnownHandPairs))
         let gaps = BounceDiagnostics.gaps(times: counter.bounceTimes, start: counter.windowStart, config: config)
         let diagnostics = DrillDiagnostics(gapReport: BounceDiagnostics.report(gaps: gaps),
                                            onsets: counter.onsetLog,
@@ -307,7 +320,8 @@ final class SessionController {
                                            duringSpeech: counter.heardDuringSpeech,
                                            fused: fusedLog)
         let result = DrillResult(drill: drill, startedAt: drillStartDate, duration: config.drillSeconds,
-                                 stats: stats, parts: parts, score: score, diagnostics: diagnostics)
+                                 stats: stats, parts: parts, score: score, progress: progress, hands: hands,
+                                 tip: tip, diagnostics: diagnostics)
         if debugMode { BounceLogger.write(result) }
         lastResult = result
         secondsLeft = 0
@@ -315,10 +329,30 @@ final class SessionController {
 
         if let total = score.total {
             save(result, total: total)
-            let starWord = score.stars == 1 ? "star" : "stars"
-            speech.say("Stop! \(total)! \(score.stars) \(starWord).")
+            speech.say("Stop! \(stats.count) bounces! \(Self.closingPhrase(progress.comparison))")
         } else {
             speech.say("Stop! Let's try that again.")
+        }
+    }
+
+    /// The bounce counts of the player's earlier saved drills of this kind, oldest first.
+    private func previousBounces(for drill: Drill) -> [Int] {
+        guard let modelContext else { return [] }
+        let raw = drill.rawValue
+        let descriptor = FetchDescriptor<SessionRecord>(predicate: #Predicate { $0.drillRaw == raw },
+                                                        sortBy: [SortDescriptor(\.startedAt)])
+        return ((try? modelContext.fetch(descriptor)) ?? []).map(\.bounceCount)
+    }
+
+    /// The short spoken line after the bounce count.
+    private static func closingPhrase(_ comparison: Comparison) -> String {
+        switch comparison {
+        case .tooFew: return "Let's try that again."
+        case .first: return "Nice start!"
+        case .newBest: return "A new best!"
+        case .beatLast: return "More than last time!"
+        case .matchedLast: return "Same as last time."
+        case .belowLast: return "Let's beat that next time."
         }
     }
 
