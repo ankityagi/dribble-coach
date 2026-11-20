@@ -1,0 +1,14 @@
+{
+  "version": 2,
+  "drillSeconds": 30,
+  "thresholdFactor": 5,
+  "absoluteFloor": 0.00001,
+  "refractorySeconds": 0.12,
+  "lowBandMinHz": 60,
+  "lowBandMaxHz": 500,
+  "highBandMinHz": 1000,
+  "voiceRatio": 1.0,
+  "speechGuardSeconds": 0.15,
+  "lostBallGapSeconds": 1.5,
+  "rhythmZeroSpread": 0.35
+}
