@@ -78,15 +78,15 @@ If the hand target is missed, a small Core ML ball detector trained on these cli
 
 ## What works in this branch
 
-- **M0, skeleton app:** Home (streak, last score, Start), drill picker (crossover, right-hand pound, left-hand pound), drill screen, summary, history, and settings (player name, Home or Gym, coach voice, delete all data, hidden debug mode). Tuning numbers load from `DribbleCoach/Resources/DribbleConfig.json` over the defaults in code.
-- **M1, bounce counter:** the microphone feeds an onset detector that finds ball thumps in 5 ms steps. The drill screen shows the live count, a beat light that flashes on each bounce, and the time left. The summary shows bounces, speed, lost balls and a rhythm score. Drills with a score are saved and feed the streak.
+- **M0, skeleton app:** Home (streak, last drill, Start), drill picker (crossover, right-hand pound, left-hand pound), drill screen, summary, history, and settings (player name, Home or Gym, coach voice, delete all data, hidden debug mode). Tuning numbers load from `DribbleCoach/Resources/DribbleConfig.json` over the defaults in code.
+- **M1, bounce counter:** the microphone feeds an onset detector that finds ball thumps in 5 ms steps. The drill screen shows the live count, a beat light that flashes on each bounce, and the time left. Drills of 10 or more bounces are saved and feed the streak.
 - **M2, body tracking:** the front camera runs at 1080p and 60 fps where the phone allows. Apple Vision finds bodies in each frame. The app keeps the largest one and follows it by the hips, drops joints below 0.3 confidence, and smooths each joint with a One Euro filter. Distances are measured in torso lengths. If Vision averages more than 16 ms a frame for 2 seconds, the camera drops to 30 fps for the rest of the session. Camera frames and sound are timed on the same host clock, ready for M3 to match bounces to wrists.
 - **Placement check:** before each drill, the camera picture fills the screen with an outline to stand in and a checklist (body, distance, center, feet, sound). The app speaks one fix at a time, in the spec's order: "Step back", "Come closer", "Move left", "Move right", "I can't see your feet", plus "Stand in front of me" when nobody is in view. Left and right are the kid's own. Once every check holds for a second, it locks exposure and white balance and asks for 3 bounces. If the kid walks off during the sound check, it goes back to placing them.
 - **Spoken lines:** "Bounce the ball 3 times", the countdown, "Ten seconds!", "Keep dribbling!" after 3 quiet seconds, and the score at the end. Sound heard while the coach is talking is ignored.
 
 ## Not in this branch yet
 
-- Hand switching, dribble height and eyes up (M3). Until then the score is the rhythm score minus lost-ball points, and the other three bars say "Coming with body tracking".
+- Dribble height and eyes up (M3), and with them the 0 to 100 score. Until then the summary does not show a score: it leads with the bounce count, stars for beating your own last drill (one for finishing, two for matching or beating last time, three for a new best), hand switches (or target-hand bounces on the pound drills), lost balls and one tip. The old rhythm-based score is still computed and saved, and shown in Debug mode as the internal score.
 - The live coach cues such as "Lower!" and "Switch hands!", and pausing when the kid leaves the frame (M4). Debug video recordings and the replay harness (M5).
 
 ## Build and run

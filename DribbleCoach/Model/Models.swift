@@ -49,6 +49,15 @@ struct DrillDiagnostics: Equatable {
     let rejectedVoice: Int
     let rejectedSpeech: Int
     let spread: Double?
+    /// Sounds the microphone accepted.
+    let heard: Int
+    /// Of those, how many no wrist push backed up, so they were not counted.
+    let unconfirmed: Int
+    /// Counted bounces that were confirmed only because the sound was loud, not by a strong push.
+    let confirmedByLoudness: Int
+    /// Sounds heard while the coach spoke that the camera, not the microphone, decided.
+    let duringSpeech: Int
+    let fused: [BounceLogger.FusedLogEntry]
 }
 
 /// The outcome of one finished drill, shown on the summary screen.
@@ -59,6 +68,10 @@ struct DrillResult: Equatable {
     let stats: RhythmStats
     let parts: PartScores
     let score: ScoreResult
+    /// How this drill compares with the player's own earlier ones, which is what the kid sees.
+    let progress: ProgressResult
+    let hands: HandSummary
+    let tip: String
     var diagnostics: DrillDiagnostics? = nil
 }
 
@@ -83,6 +96,8 @@ final class SessionRecord {
     var deviceModel: String
     var appVersion: String
     var configVersion: Int
+    /// Times the hand changed between back-to-back bounces. Default keeps older saved drills loading.
+    var switchCount: Int = 0
 
     var drill: Drill { Drill(rawValue: drillRaw) ?? .crossover }
 
@@ -94,7 +109,8 @@ final class SessionRecord {
         placeRaw = place.rawValue
         durationSeconds = result.duration
         totalScore = total
-        stars = result.score.stars
+        stars = result.progress.stars
+        switchCount = result.hands.switches
         rhythmScore = result.parts.rhythm
         switchingScore = result.parts.switching
         lowScore = result.parts.low

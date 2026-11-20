@@ -11,40 +11,43 @@ struct SummaryView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 24) {
-                if let total = result.score.total {
-                    Text("\(total)")
-                        .font(.system(size: 120, weight: .heavy, design: .rounded))
-                        .monospacedDigit()
-                    StarsView(count: result.score.stars, size: 36)
-                } else {
+                if result.progress.comparison == .tooFew {
                     Text("Let's try that again")
                         .font(.largeTitle.bold())
                         .multilineTextAlignment(.center)
-                    Text("I need at least \(session.config.minBouncesForScore) bounces to give a score.")
+                    Text("I need at least \(session.config.minBouncesForScore) bounces to count a drill. I counted \(result.stats.count).")
                         .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                } else {
+                    Text("\(result.stats.count)")
+                        .font(.system(size: 120, weight: .heavy, design: .rounded))
+                        .monospacedDigit()
+                    Text("bounces")
+                        .font(.title2)
+                        .foregroundStyle(.secondary)
+                    StarsView(count: result.progress.stars, size: 36)
+                    Text(comparisonText)
+                        .font(.title3.weight(.semibold))
                         .multilineTextAlignment(.center)
                 }
 
-                VStack(spacing: 12) {
-                    ForEach(Part.allCases, id: \.self) { part in
-                        PartBar(part: part, value: result.parts[part])
-                    }
-                }
-
                 HStack(spacing: 12) {
-                    StatTile(title: "Bounces", value: "\(result.stats.count)")
                     StatTile(title: "Per second", value: String(format: "%.1f", result.stats.bouncesPerSecond))
+                    handTile
                     StatTile(title: "Lost balls", value: "\(result.stats.lostBalls)")
                 }
 
-                if let weakest = result.score.weakest {
-                    Label(weakest.tip, systemImage: "lightbulb.fill")
+                if result.progress.comparison != .tooFew {
+                    Label(result.tip, systemImage: "lightbulb.fill")
                         .font(.title3)
                         .multilineTextAlignment(.leading)
                 }
 
-                if debugMode, let diagnostics = result.diagnostics {
-                    BounceDebugSection(diagnostics: diagnostics, stats: result.stats)
+                if debugMode {
+                    internalScore
+                    if let diagnostics = result.diagnostics {
+                        BounceDebugSection(diagnostics: diagnostics, stats: result.stats)
+                    }
                 }
 
                 Text("Streak: \(streak) \(streak == 1 ? "day" : "days")")
@@ -61,6 +64,47 @@ struct SummaryView: View {
             }
             .padding()
         }
+    }
+
+    /// Hand switches for the crossover, bounces with the target hand for the pound drills.
+    @ViewBuilder
+    private var handTile: some View {
+        switch result.drill {
+        case .crossover:
+            StatTile(title: "Hand switches", value: "\(result.hands.switches)")
+        case .rightPound:
+            StatTile(title: "Right hand", value: handShare)
+        case .leftPound:
+            StatTile(title: "Left hand", value: handShare)
+        }
+    }
+
+    private var handShare: String {
+        result.hands.known > 0 ? "\(result.hands.onTarget) of \(result.hands.known)" : "–"
+    }
+
+    private var comparisonText: String {
+        switch result.progress.comparison {
+        case .tooFew: return ""
+        case .first: return "Your first time. Nice start!"
+        case .newBest(let previous): return "New best! Your old best was \(previous)."
+        case .beatLast(let by): return "\(by) more than last time!"
+        case .matchedLast: return "Same as last time. Can you beat it?"
+        case .belowLast(let by, let best): return "\(by) fewer than last time. Your best is \(best)."
+        }
+    }
+
+    /// The old 0 to 100 score, kept for development until all four parts exist.
+    private var internalScore: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Internal score (not shown to kids)").font(.headline)
+            Text("Total \(result.score.total.map(String.init) ?? "–"), rhythm \(result.parts.rhythm.map { String(Int($0.rounded())) } ?? "–"), lost balls \(result.stats.lostBalls)")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding()
+        .background(Color.gray.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
     }
 
     private var streak: Int {

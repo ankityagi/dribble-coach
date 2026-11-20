@@ -23,9 +23,12 @@ struct HistoryView: View {
                                 .foregroundStyle(.secondary)
                         }
                         Spacer()
-                        Text("\(record.totalScore)")
+                        Text("\(record.bounceCount)")
                             .font(.title2.bold())
                             .monospacedDigit()
+                        Text("bounces")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                         StarsView(count: record.stars, size: 12)
                     }
                 }
@@ -41,17 +44,17 @@ struct RecordDetailView: View {
     var body: some View {
         Form {
             Section {
-                LabeledContent("Score", value: "\(record.totalScore)")
-                LabeledContent("Stars", value: "\(record.stars)")
                 LabeledContent("Bounces", value: "\(record.bounceCount)")
+                LabeledContent("Stars", value: "\(record.stars)")
                 LabeledContent("Per second", value: String(format: "%.1f", record.bouncesPerSecond))
+                if record.drill == .crossover {
+                    LabeledContent("Hand switches", value: "\(record.switchCount)")
+                }
                 LabeledContent("Lost balls", value: "\(record.lostBalls)")
             }
-            Section("Parts") {
+            Section("Internal score (not shown on the summary)") {
+                LabeledContent("Total", value: "\(record.totalScore)")
                 LabeledContent("Rhythm", value: format(record.rhythmScore))
-                LabeledContent("Switching", value: format(record.switchingScore))
-                LabeledContent("Low", value: format(record.lowScore))
-                LabeledContent("Eyes up", value: format(record.eyesUpScore))
             }
             Section("Details") {
                 LabeledContent("Place", value: Place(rawValue: record.placeRaw)?.title ?? record.placeRaw)

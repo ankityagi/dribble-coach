@@ -42,6 +42,9 @@ final class SessionController {
     var lastOnsetInfo = ""
     var rejectedVoice = 0
     var rejectedSpeech = 0
+    /// Sounds the microphone accepted, and how many of those no wrist push backed up (so they didn't count).
+    var heardCount = 0
+    var unconfirmedCount = 0
 
     // Body tracking, refreshed at most 30 times a second for the screen.
     var pose: BodyPose?
@@ -65,9 +68,12 @@ final class SessionController {
     private let poseService: PoseService
     private let poseLogger = PoseLogger()
     private let counter: BounceCounter
+    private let fusion: FusionEngine
     private let placement: PlacementChecker
 
     @ObservationIgnored private var flowTask: Task<Void, Never>?
+    @ObservationIgnored private var fusedLog: [BounceLogger.FusedLogEntry] = []
+    @ObservationIgnored private var confirmedByLoudness = 0
     @ObservationIgnored private var drillStartHost = 0.0
     @ObservationIgnored private var drillStartDate = Date()
     @ObservationIgnored private var lastLevelUpdate = 0.0
@@ -89,6 +95,7 @@ final class SessionController {
             overridesAt: Bundle.main.url(forResource: "DribbleConfig", withExtension: "json"))
         self.config = config
         counter = BounceCounter(config: config)
+        fusion = FusionEngine(config: config)
         placement = PlacementChecker(config: config)
         poseService = PoseService(config: config)
         secondsLeft = config.drillSeconds
@@ -170,6 +177,7 @@ final class SessionController {
         }
         if debugMode { poseLogger.start(label: drill.rawValue) }
 
+        fusion.reset()
         placement.reset()
         placementStep = .body
         placementChecks = PlacementChecks()
@@ -246,7 +254,11 @@ final class SessionController {
 
         drillStartHost = HostClock.now()
         drillStartDate = Date()
-        counter.begin(at: drillStartHost, duration: config.drillSeconds)
+        // The camera has been running since placement, so every sound must be backed by a wrist push.
+        counter.begin(at: drillStartHost, duration: config.drillSeconds, requireConfirmation: true)
+        // The fusion buffer keeps running from placement, so the wrist motion just before "Go!" is not lost.
+        fusedLog = []
+        confirmedByLoudness = 0
         resetLive()
         phase = .running
 
@@ -257,6 +269,7 @@ final class SessionController {
             let now = HostClock.now()
             let elapsed = now - drillStartHost
             secondsLeft = max(0, config.drillSeconds - elapsed)
+            applyFusion(fusion.resolveStale(now: now))
             refreshLive(now: now)
 
             if checkThermal() { return }
@@ -275,19 +288,40 @@ final class SessionController {
 
     private func finish() {
         let end = drillStartHost + config.drillSeconds
+        // Decide any sounds still waiting for the camera, so the last bounces are not lost.
+        applyFusion(fusion.resolveStale(now: end + 10))
         let stats = counter.drillStats(now: end)
         // Rhythm only for now. Switching, low and eyes up arrive with fusion and head tracking in M3.
         let parts = PartScores(rhythm: stats.rhythmScore)
         let score = Scoring.score(parts: parts, bounceCount: stats.count,
                                   lostBalls: stats.lostBalls, config: config)
+        // What the kid sees: their bounces, hand switches, and how this compares with their own earlier drills.
+        let countedHands: [Hand?] = fusedLog
+            .filter { $0.confirmed && $0.time >= 0 && $0.time <= config.drillSeconds }
+            .sorted { $0.time < $1.time }
+            .map { $0.hand.flatMap { Hand(rawValue: $0) } }
+        let target: Hand? = drill == .rightPound ? .right : drill == .leftPound ? .left : nil
+        let hands = Hands.summarize(countedHands, target: target)
+        let progress = Progress.evaluate(bounces: stats.count, previous: previousBounces(for: drill),
+                                         minBounces: config.minBouncesForScore)
+        let tip = Tips.choose(
+            lostBalls: stats.lostBalls, spread: stats.spread,
+            switchShare: drill == .crossover ? hands.switchShare(minPairs: config.minKnownHandPairs) : nil,
+            targetShare: target == nil ? nil : hands.targetShare(minKnown: config.minKnownHandPairs))
         let gaps = BounceDiagnostics.gaps(times: counter.bounceTimes, start: counter.windowStart, config: config)
         let diagnostics = DrillDiagnostics(gapReport: BounceDiagnostics.report(gaps: gaps),
                                            onsets: counter.onsetLog,
                                            rejectedVoice: counter.rejectedVoice,
                                            rejectedSpeech: counter.rejectedSpeech,
-                                           spread: stats.spread)
+                                           spread: stats.spread,
+                                           heard: heardCount,
+                                           unconfirmed: counter.rejectedUnconfirmed,
+                                           confirmedByLoudness: confirmedByLoudness,
+                                           duringSpeech: counter.heardDuringSpeech,
+                                           fused: fusedLog)
         let result = DrillResult(drill: drill, startedAt: drillStartDate, duration: config.drillSeconds,
-                                 stats: stats, parts: parts, score: score, diagnostics: diagnostics)
+                                 stats: stats, parts: parts, score: score, progress: progress, hands: hands,
+                                 tip: tip, diagnostics: diagnostics)
         if debugMode { BounceLogger.write(result) }
         lastResult = result
         secondsLeft = 0
@@ -295,10 +329,30 @@ final class SessionController {
 
         if let total = score.total {
             save(result, total: total)
-            let starWord = score.stars == 1 ? "star" : "stars"
-            speech.say("Stop! \(total)! \(score.stars) \(starWord).")
+            speech.say("Stop! \(stats.count) bounces! \(Self.closingPhrase(progress.comparison))")
         } else {
             speech.say("Stop! Let's try that again.")
+        }
+    }
+
+    /// The bounce counts of the player's earlier saved drills of this kind, oldest first.
+    private func previousBounces(for drill: Drill) -> [Int] {
+        guard let modelContext else { return [] }
+        let raw = drill.rawValue
+        let descriptor = FetchDescriptor<SessionRecord>(predicate: #Predicate { $0.drillRaw == raw },
+                                                        sortBy: [SortDescriptor(\.startedAt)])
+        return ((try? modelContext.fetch(descriptor)) ?? []).map(\.bounceCount)
+    }
+
+    /// The short spoken line after the bounce count.
+    private static func closingPhrase(_ comparison: Comparison) -> String {
+        switch comparison {
+        case .tooFew: return "Let's try that again."
+        case .first: return "Nice start!"
+        case .newBest: return "A new best!"
+        case .beatLast: return "More than last time!"
+        case .matchedLast: return "Same as last time."
+        case .belowLast: return "Let's beat that next time."
         }
     }
 
@@ -324,8 +378,9 @@ final class SessionController {
             }
         case .running:
             if counter.ingest(onset) {
-                beat += 1
-                refreshLive(now: HostClock.now())
+                heardCount += 1
+                // The microphone liked it; now it waits for a wrist push before it counts.
+                fusion.addOnset(onset)
             }
             rejectedVoice = counter.rejectedVoice
             rejectedSpeech = counter.rejectedSpeech
@@ -338,6 +393,11 @@ final class SessionController {
         guard isInDrillFlow || phase == .summary else { return }
         if phase == .placement {
             updatePlacement(result)
+        }
+        var inCountdown = false
+        if case .countdown = phase { inCountdown = true }
+        if phase == .running || inCountdown {
+            applyFusion(fusion.addPose(result.pose, time: result.frame.time))
         }
 
         // The screen needs no more than 30 updates a second.
@@ -394,7 +454,32 @@ final class SessionController {
         micLevel = level
     }
 
+    /// Counts the sounds the wrists backed up and drops the rest.
+    private func applyFusion(_ decided: [FusedOnset]) {
+        guard phase == .running || phase == .summary else { return }
+        var changed = false
+        for item in decided {
+            fusedLog.append(BounceLogger.FusedLogEntry(
+                time: item.onset.time - counter.windowStart, audioVerdict: .accepted, energy: item.onset.lowEnergy,
+                leftPush: item.leftPush, rightPush: item.rightPush, hand: item.hand?.rawValue,
+                pushSpeed: item.pushSpeed, bodyVisible: item.bodyVisible, confirmed: item.confirmed,
+                confirmedByLoudness: item.confirmedByLoudness))
+            if item.confirmed {
+                if counter.confirm(item.onset.time) {
+                    beat += 1
+                    if item.confirmedByLoudness { confirmedByLoudness += 1 }
+                    changed = true
+                }
+            } else if counter.dismiss(item.onset.time) {
+                unconfirmedCount += 1
+            }
+        }
+        if changed { refreshLive(now: HostClock.now()) }
+    }
+
     private func resetLive() {
+        heardCount = 0
+        unconfirmedCount = 0
         liveCount = 0
         liveBouncesPerSecond = 0
         liveRhythm = nil

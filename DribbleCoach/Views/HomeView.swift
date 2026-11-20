@@ -17,7 +17,7 @@ struct HomeView: View {
 
             HStack(spacing: 16) {
                 StatTile(title: "Streak", value: "\(streak) \(streak == 1 ? "day" : "days")")
-                StatTile(title: "Last score", value: records.first.map { "\($0.totalScore)" } ?? "–")
+                StatTile(title: "Last drill", value: records.first.map { "\($0.bounceCount) bounces" } ?? "–")
             }
             .padding(.horizontal)
 

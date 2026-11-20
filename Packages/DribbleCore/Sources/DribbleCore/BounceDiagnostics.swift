@@ -7,6 +7,8 @@ public enum OnsetVerdict: String, Codable, Sendable {
     case speech
     case echo
     case slowRise
+    /// Heard fine, but no wrist push backed it up (fusion), so it was not counted.
+    case unconfirmed
 }
 
 /// One sound the detector found during a drill, with what the counter decided.
