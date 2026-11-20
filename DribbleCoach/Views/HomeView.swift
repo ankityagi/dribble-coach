@@ -4,6 +4,7 @@ import DribbleCore
 
 struct HomeView: View {
     @Query(sort: \SessionRecord.startedAt, order: .reverse) private var records: [SessionRecord]
+    @AppStorage(SettingsKey.debugMode) private var debugMode = false
 
     var body: some View {
         VStack(spacing: 32) {
@@ -31,6 +32,19 @@ struct HomeView: View {
             .buttonStyle(.borderedProminent)
             .tint(.orange)
             .padding(.horizontal, 32)
+
+            if debugMode {
+                NavigationLink {
+                    CountTestView()
+                } label: {
+                    Label("Count test (Debug)", systemImage: "waveform")
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                }
+                .buttonStyle(.bordered)
+                .tint(.orange)
+                .padding(.horizontal, 32)
+            }
 
             Spacer()
         }

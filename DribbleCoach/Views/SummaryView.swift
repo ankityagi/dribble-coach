@@ -5,6 +5,7 @@ import DribbleCore
 struct SummaryView: View {
     @Environment(SessionController.self) private var session
     @Query(sort: \SessionRecord.startedAt, order: .reverse) private var records: [SessionRecord]
+    @AppStorage(SettingsKey.debugMode) private var debugMode = false
     let result: DrillResult
 
     var body: some View {
@@ -40,6 +41,10 @@ struct SummaryView: View {
                     Label(weakest.tip, systemImage: "lightbulb.fill")
                         .font(.title3)
                         .multilineTextAlignment(.leading)
+                }
+
+                if debugMode, let diagnostics = result.diagnostics {
+                    BounceDebugSection(diagnostics: diagnostics, stats: result.stats)
                 }
 
                 Text("Streak: \(streak) \(streak == 1 ? "day" : "days")")

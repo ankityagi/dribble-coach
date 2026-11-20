@@ -280,8 +280,15 @@ final class SessionController {
         let parts = PartScores(rhythm: stats.rhythmScore)
         let score = Scoring.score(parts: parts, bounceCount: stats.count,
                                   lostBalls: stats.lostBalls, config: config)
+        let gaps = BounceDiagnostics.gaps(times: counter.bounceTimes, start: counter.windowStart, config: config)
+        let diagnostics = DrillDiagnostics(gapReport: BounceDiagnostics.report(gaps: gaps),
+                                           onsets: counter.onsetLog,
+                                           rejectedVoice: counter.rejectedVoice,
+                                           rejectedSpeech: counter.rejectedSpeech,
+                                           spread: stats.spread)
         let result = DrillResult(drill: drill, startedAt: drillStartDate, duration: config.drillSeconds,
-                                 stats: stats, parts: parts, score: score)
+                                 stats: stats, parts: parts, score: score, diagnostics: diagnostics)
+        if debugMode { BounceLogger.write(result) }
         lastResult = result
         secondsLeft = 0
         phase = .summary
