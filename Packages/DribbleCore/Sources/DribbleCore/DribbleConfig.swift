@@ -113,6 +113,24 @@ public struct DribbleConfig: Codable, Equatable, Sendable {
     /// Onsets are ignored while the coach speaks and for this long after.
     public var speechGuardSeconds: Double = 0.15
 
+    // Fusion: matching sounds to wrist pushes
+    /// How far before a sound to look for the wrist push that sent the ball down.
+    public var fusionWindowSeconds: Double = 0.25
+    /// Wrist speed is measured across at least this long, to ride over frame-to-frame jitter.
+    public var pushSpanSeconds: Double = 0.05
+    /// A sound is confirmed when a wrist moved down at least this fast, in torso lengths per second.
+    /// A first guess: the phone logs set the real number.
+    public var minPushSpeed: Double = 1.5
+    /// A loud sound (low-band energy at least this) is also confirmed by a lighter wrist push, because low
+    /// bounces move the wrist less. Speech in the phone logs stayed below this.
+    public var loudEnergy: Double = 3e-4
+    /// The lighter wrist push, in torso lengths per second, that a loud sound needs.
+    public var assistPushSpeed: Double = 0.5
+    /// The stronger wrist is the hand only if it beats the other by this factor.
+    public var handRatio: Double = 1.3
+    /// How long to wait for camera frames to catch up with a sound before deciding without them.
+    public var fusionWaitSeconds: Double = 0.2
+
     // Rhythm and score
     public var lostBallGapSeconds: Double = 1.5
     public var rhythmZeroSpread: Double = 0.35

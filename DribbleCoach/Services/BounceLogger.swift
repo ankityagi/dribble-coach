@@ -49,16 +49,42 @@ enum BounceLogger {
         }
     }
 
+    /// A sound and what the wrists did before it, for the Count test log.
+    struct FusedLogEntry: Encodable {
+        let time: Double
+        let audioVerdict: OnsetVerdict
+        let energy: Double
+        let leftPush: Double?
+        let rightPush: Double?
+        let hand: String?
+        let pushSpeed: Double?
+        let bodyVisible: Bool
+        let confirmed: Bool
+        let confirmedByLoudness: Bool
+    }
+
     private struct RawEntry: Encodable {
         let label: String
         let startedAt: Date
         let bounces: Int
+        let minPushSpeed: Double
+        let loudEnergy: Double
+        let assistPushSpeed: Double
+        let cameraFps: Int
+        let trackingFps: Double
+        let visionMilliseconds: Double
+        let fellBackTo30: Bool
         let gaps: [BounceGap]
         let onsets: [OnsetRecord]
+        let fused: [FusedLogEntry]
+        let wrists: [WristSample]
     }
 
     /// Writes a bare onset log, for the Count test, which has no drill result.
-    static func writeRaw(label: String, startedAt: Date, gaps: [BounceGap], onsets: [OnsetRecord]) {
+    static func writeRaw(label: String, startedAt: Date, gaps: [BounceGap], onsets: [OnsetRecord],
+                         fused: [FusedLogEntry] = [], wrists: [WristSample] = [], minPushSpeed: Double = 0,
+                         loudEnergy: Double = 0, assistPushSpeed: Double = 0, cameraFps: Int = 0,
+                         trackingFps: Double = 0, visionMilliseconds: Double = 0, fellBackTo30: Bool = false) {
         guard !onsets.isEmpty else { return }
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
@@ -68,7 +94,9 @@ enum BounceLogger {
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         encoder.dateEncodingStrategy = .iso8601
         let entry = RawEntry(label: label, startedAt: startedAt, bounces: onsets.filter { $0.verdict == .accepted }.count,
-                             gaps: gaps, onsets: onsets)
+                             minPushSpeed: minPushSpeed, loudEnergy: loudEnergy,
+                             assistPushSpeed: assistPushSpeed, cameraFps: cameraFps, trackingFps: trackingFps,
+                             visionMilliseconds: visionMilliseconds, fellBackTo30: fellBackTo30, gaps: gaps, onsets: onsets, fused: fused, wrists: wrists)
         do {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             try encoder.encode(entry).write(to: url)
