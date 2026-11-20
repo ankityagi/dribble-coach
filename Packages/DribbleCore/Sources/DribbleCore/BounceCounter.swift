@@ -17,6 +17,12 @@ public final class BounceCounter {
     public private(set) var rejectedSpeech = 0
     public private(set) var rejectedEcho = 0
     public private(set) var rejectedSlow = 0
+    /// Sounds heard fine but dropped because no wrist push backed them up.
+    public private(set) var rejectedUnconfirmed = 0
+    /// True when sounds only count after `confirm`, because the camera must back them up.
+    public private(set) var requiresConfirmation = false
+    /// Sounds the microphone accepted that are still waiting for the camera's decision.
+    public private(set) var awaitingConfirmation: [Double] = []
     /// Recent onsets of any verdict, for the echo rule.
     private var recent: [(time: Double, energy: Double)] = []
     /// Every onset heard inside the drill window and what was done with it, for Debug mode.
@@ -27,7 +33,11 @@ public final class BounceCounter {
     }
 
     /// Starts a fresh drill at host time `start`, lasting `duration` seconds.
-    public func begin(at start: Double, duration: Double) {
+    /// With `requireConfirmation`, an accepted sound waits in `awaitingConfirmation` until `confirm` or `dismiss`.
+    public func begin(at start: Double, duration: Double, requireConfirmation: Bool = false) {
+        requiresConfirmation = requireConfirmation
+        awaitingConfirmation = []
+        rejectedUnconfirmed = 0
         self.start = start
         end = start + duration
         bounceTimes = []
@@ -82,8 +92,12 @@ public final class BounceCounter {
             note(.echo)
             return false
         }
-        bounceTimes.append(onset.time)
         note(.accepted)
+        if requiresConfirmation {
+            awaitingConfirmation.append(onset.time)
+        } else {
+            bounceTimes.append(onset.time)
+        }
         return true
     }
 
@@ -96,6 +110,31 @@ public final class BounceCounter {
     /// Stats for the whole drill so far, or the full drill once it has ended.
     public func drillStats(now: Double) -> RhythmStats {
         Rhythm.stats(times: bounceTimes, start: start, end: min(now, end), config: config)
+    }
+
+    /// The camera backed this sound up: it becomes a bounce. Returns false if it wasn't waiting.
+    @discardableResult
+    public func confirm(_ time: Double) -> Bool {
+        guard let index = awaitingConfirmation.firstIndex(of: time) else { return false }
+        awaitingConfirmation.remove(at: index)
+        bounceTimes.append(time)
+        bounceTimes.sort()
+        return true
+    }
+
+    /// The camera did not back this sound up: it is not a bounce. Returns false if it wasn't waiting.
+    @discardableResult
+    public func dismiss(_ time: Double) -> Bool {
+        guard let index = awaitingConfirmation.firstIndex(of: time) else { return false }
+        awaitingConfirmation.remove(at: index)
+        rejectedUnconfirmed += 1
+        let relative = time - start
+        if let i = onsetLog.lastIndex(where: { abs($0.time - relative) < 1e-9 }) {
+            let old = onsetLog[i]
+            onsetLog[i] = OnsetRecord(time: old.time, verdict: .unconfirmed, lowEnergy: old.lowEnergy,
+                                      voiceRatio: old.voiceRatio, riseRatio: old.riseRatio, margin: old.margin)
+        }
+        return true
     }
 
     /// Time the current drill window started, on the host clock.

@@ -50,6 +50,8 @@ struct BounceDebugSection: View {
                 Text("Under half the median: \(report.tooShort) (likely one thump counted twice)")
                 Text("Over 1.6x the median: \(report.tooLong) (likely a missed bounce)")
                 Text("Lost-ball gaps: \(stats.lostBalls), \(report.gaps.filter(\.isLost).map { String(format: "%.1fs at %.1fs", $0.seconds, $0.time - $0.seconds) }.joined(separator: ", "))")
+                Text("Heard \(diagnostics.heard), counted \(stats.count); \(diagnostics.unconfirmed) had no wrist push behind them (talking, other noise or a missed push)")
+                Text("Counted only because the sound was loud: \(diagnostics.confirmedByLoudness)")
                 Text("Ignored sounds: \(diagnostics.rejectedVoice) as voice, \(diagnostics.rejectedSpeech) while the coach spoke")
             }
             .font(.footnote)

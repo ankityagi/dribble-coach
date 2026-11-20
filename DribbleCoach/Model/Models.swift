@@ -49,6 +49,13 @@ struct DrillDiagnostics: Equatable {
     let rejectedVoice: Int
     let rejectedSpeech: Int
     let spread: Double?
+    /// Sounds the microphone accepted.
+    let heard: Int
+    /// Of those, how many no wrist push backed up, so they were not counted.
+    let unconfirmed: Int
+    /// Counted bounces that were confirmed only because the sound was loud, not by a strong push.
+    let confirmedByLoudness: Int
+    let fused: [BounceLogger.FusedLogEntry]
 }
 
 /// The outcome of one finished drill, shown on the summary screen.

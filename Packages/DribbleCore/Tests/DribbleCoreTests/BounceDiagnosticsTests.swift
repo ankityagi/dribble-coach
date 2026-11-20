@@ -89,4 +89,42 @@ final class BounceDiagnosticsTests: XCTestCase {
         XCTAssertNotNil(swell)
         XCTAssertGreaterThan(thump?.riseRatio ?? 0, (swell?.riseRatio ?? 0) * 5)
     }
+
+    func testConfirmationModeCountsOnlyConfirmedSounds() {
+        let counter = BounceCounter()
+        counter.begin(at: 0, duration: 30, requireConfirmation: true)
+        XCTAssertTrue(counter.ingest(Onset(time: 1.0, lowEnergy: 6e-4, voiceRatio: 0.2, isLikelyVoice: false)))
+        XCTAssertTrue(counter.ingest(Onset(time: 2.0, lowEnergy: 6e-5, voiceRatio: 0.2, isLikelyVoice: false)))
+        XCTAssertTrue(counter.bounceTimes.isEmpty)
+        XCTAssertEqual(counter.awaitingConfirmation, [1.0, 2.0])
+
+        XCTAssertTrue(counter.confirm(1.0))
+        XCTAssertTrue(counter.dismiss(2.0))
+        XCTAssertEqual(counter.bounceTimes, [1.0])
+        XCTAssertEqual(counter.rejectedUnconfirmed, 1)
+        XCTAssertTrue(counter.awaitingConfirmation.isEmpty)
+        XCTAssertEqual(counter.onsetLog.map(\.verdict), [.accepted, .unconfirmed])
+        XCTAssertFalse(counter.confirm(1.0), "a decided sound can't be decided twice")
+    }
+
+    func testConfirmedBouncesStaySortedWhenDecisionsArriveOutOfOrder() {
+        let counter = BounceCounter()
+        counter.begin(at: 0, duration: 30, requireConfirmation: true)
+        counter.ingest(Onset(time: 1.0, lowEnergy: 6e-4, voiceRatio: 0.2, isLikelyVoice: false))
+        counter.ingest(Onset(time: 1.5, lowEnergy: 6e-4, voiceRatio: 0.2, isLikelyVoice: false))
+        counter.confirm(1.5)
+        counter.confirm(1.0)
+        XCTAssertEqual(counter.bounceTimes, [1.0, 1.5])
+    }
+
+    func testBeginResetsConfirmationState() {
+        let counter = BounceCounter()
+        counter.begin(at: 0, duration: 30, requireConfirmation: true)
+        counter.ingest(Onset(time: 1.0, lowEnergy: 6e-4, voiceRatio: 0.2, isLikelyVoice: false))
+        counter.begin(at: 100, duration: 30)
+        XCTAssertFalse(counter.requiresConfirmation)
+        XCTAssertTrue(counter.awaitingConfirmation.isEmpty)
+        counter.ingest(Onset(time: 101, lowEnergy: 6e-4, voiceRatio: 0.2, isLikelyVoice: false))
+        XCTAssertEqual(counter.bounceTimes, [101])
+    }
 }

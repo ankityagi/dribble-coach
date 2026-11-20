@@ -21,8 +21,12 @@ enum BounceLogger {
         let totalScore: Int?
         let rejectedVoice: Int
         let rejectedSpeech: Int
+        let heard: Int
+        let unconfirmed: Int
+        let confirmedByLoudness: Int
         let gaps: [BounceGap]
         let onsets: [OnsetRecord]
+        let fused: [FusedLogEntry]
     }
 
     static func write(_ result: DrillResult) {
@@ -32,8 +36,9 @@ enum BounceLogger {
                           bouncesPerSecond: result.stats.bouncesPerSecond, lostBalls: result.stats.lostBalls,
                           spread: diagnostics.spread, rhythmScore: result.stats.rhythmScore,
                           totalScore: result.score.total, rejectedVoice: diagnostics.rejectedVoice,
-                          rejectedSpeech: diagnostics.rejectedSpeech, gaps: diagnostics.gapReport.gaps,
-                          onsets: diagnostics.onsets)
+                          rejectedSpeech: diagnostics.rejectedSpeech, heard: diagnostics.heard,
+                          unconfirmed: diagnostics.unconfirmed, confirmedByLoudness: diagnostics.confirmedByLoudness,
+                          gaps: diagnostics.gapReport.gaps, onsets: diagnostics.onsets, fused: diagnostics.fused)
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "yyyy-MM-dd_HH-mm-ss"
@@ -50,7 +55,7 @@ enum BounceLogger {
     }
 
     /// A sound and what the wrists did before it, for the Count test log.
-    struct FusedLogEntry: Encodable {
+    struct FusedLogEntry: Encodable, Equatable {
         let time: Double
         let audioVerdict: OnsetVerdict
         let energy: Double

@@ -224,6 +224,7 @@ struct DebugPanel: View {
             ProgressView(value: Double(min(session.micLevel, 1))) {
                 Text("Mic level")
             }
+            Text("Heard \(session.heardCount), counted \(session.liveCount) (wrist-backed), dropped \(session.unconfirmedCount)")
             Text(String(format: "Speed (5 s): %.1f per second", session.liveBouncesPerSecond))
             Text("Rhythm (5 s): \(session.liveRhythm.map { String(Int($0.rounded())) } ?? "–")")
             Text("Ignored: \(session.rejectedVoice) voice, \(session.rejectedSpeech) while coach spoke")
