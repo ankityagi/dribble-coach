@@ -117,6 +117,41 @@ final class BounceDiagnosticsTests: XCTestCase {
         XCTAssertEqual(counter.bounceTimes, [1.0, 1.5])
     }
 
+    func testCameraDecidesSoundsHeardWhileTheCoachSpeaks() {
+        let counter = BounceCounter()
+        counter.begin(at: 0, duration: 30, requireConfirmation: true)
+        counter.setSpeaking(true, at: 0.9)
+        XCTAssertTrue(counter.ingest(Onset(time: 1.0, lowEnergy: 6e-4, voiceRatio: 0.2, isLikelyVoice: false)))
+        XCTAssertEqual(counter.awaitingConfirmation, [1.0])
+        XCTAssertEqual(counter.heardDuringSpeech, 1)
+        XCTAssertEqual(counter.rejectedSpeech, 0)
+        XCTAssertTrue(counter.confirm(1.0))
+        XCTAssertEqual(counter.bounceTimes, [1.0])
+        // Just after the coach stops, the 0.15 s guard is also handed to the camera.
+        counter.setSpeaking(false, at: 1.1)
+        XCTAssertTrue(counter.ingest(Onset(time: 1.2, lowEnergy: 6e-4, voiceRatio: 0.2, isLikelyVoice: false)))
+        XCTAssertEqual(counter.heardDuringSpeech, 2)
+    }
+
+    func testSoundOnlyCountingStillIgnoresEverythingWhileTheCoachSpeaks() {
+        let counter = BounceCounter()
+        counter.begin(at: 0, duration: 30)
+        counter.setSpeaking(true, at: 0.9)
+        XCTAssertFalse(counter.ingest(Onset(time: 1.0, lowEnergy: 6e-4, voiceRatio: 0.2, isLikelyVoice: false)))
+        XCTAssertEqual(counter.rejectedSpeech, 1)
+        XCTAssertEqual(counter.heardDuringSpeech, 0)
+    }
+
+    func testVoiceAndEchoRulesStillApplyWhileTheCoachSpeaks() {
+        var config = DribbleConfig()
+        config.voiceRatio = 30
+        let counter = BounceCounter(config: config)
+        counter.begin(at: 0, duration: 30, requireConfirmation: true)
+        counter.setSpeaking(true, at: 0.9)
+        XCTAssertFalse(counter.ingest(Onset(time: 1.0, lowEnergy: 6e-4, voiceRatio: 50, isLikelyVoice: true)))
+        XCTAssertEqual(counter.rejectedVoice, 1)
+    }
+
     func testBeginResetsConfirmationState() {
         let counter = BounceCounter()
         counter.begin(at: 0, duration: 30, requireConfirmation: true)

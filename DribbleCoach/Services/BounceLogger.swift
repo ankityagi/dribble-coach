@@ -24,6 +24,7 @@ enum BounceLogger {
         let heard: Int
         let unconfirmed: Int
         let confirmedByLoudness: Int
+        let duringSpeech: Int
         let gaps: [BounceGap]
         let onsets: [OnsetRecord]
         let fused: [FusedLogEntry]
@@ -38,6 +39,7 @@ enum BounceLogger {
                           totalScore: result.score.total, rejectedVoice: diagnostics.rejectedVoice,
                           rejectedSpeech: diagnostics.rejectedSpeech, heard: diagnostics.heard,
                           unconfirmed: diagnostics.unconfirmed, confirmedByLoudness: diagnostics.confirmedByLoudness,
+                          duringSpeech: diagnostics.duringSpeech,
                           gaps: diagnostics.gapReport.gaps, onsets: diagnostics.onsets, fused: diagnostics.fused)
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")

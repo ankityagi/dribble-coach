@@ -55,6 +55,8 @@ struct DrillDiagnostics: Equatable {
     let unconfirmed: Int
     /// Counted bounces that were confirmed only because the sound was loud, not by a strong push.
     let confirmedByLoudness: Int
+    /// Sounds heard while the coach spoke that the camera, not the microphone, decided.
+    let duringSpeech: Int
     let fused: [BounceLogger.FusedLogEntry]
 }
 

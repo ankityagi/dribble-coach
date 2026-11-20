@@ -304,6 +304,7 @@ final class SessionController {
                                            heard: heardCount,
                                            unconfirmed: counter.rejectedUnconfirmed,
                                            confirmedByLoudness: confirmedByLoudness,
+                                           duringSpeech: counter.heardDuringSpeech,
                                            fused: fusedLog)
         let result = DrillResult(drill: drill, startedAt: drillStartDate, duration: config.drillSeconds,
                                  stats: stats, parts: parts, score: score, diagnostics: diagnostics)

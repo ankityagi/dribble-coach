@@ -19,6 +19,8 @@ public final class BounceCounter {
     public private(set) var rejectedSlow = 0
     /// Sounds heard fine but dropped because no wrist push backed them up.
     public private(set) var rejectedUnconfirmed = 0
+    /// Sounds heard while the coach was speaking that were passed on to the camera instead of being thrown out.
+    public private(set) var heardDuringSpeech = 0
     /// True when sounds only count after `confirm`, because the camera must back them up.
     public private(set) var requiresConfirmation = false
     /// Sounds the microphone accepted that are still waiting for the camera's decision.
@@ -38,6 +40,7 @@ public final class BounceCounter {
         requiresConfirmation = requireConfirmation
         awaitingConfirmation = []
         rejectedUnconfirmed = 0
+        heardDuringSpeech = 0
         self.start = start
         end = start + duration
         bounceTimes = []
@@ -72,10 +75,17 @@ public final class BounceCounter {
         let louderBefore = recent.map(\.energy).max() ?? 0
         recent.append((onset.time, onset.lowEnergy))
 
-        if speaking || onset.time < mutedUntil {
-            rejectedSpeech += 1
-            note(.speech)
-            return false
+        let duringSpeech = speaking || onset.time < mutedUntil
+        if duringSpeech {
+            // Sound-only counting can't tell the coach from a bounce, so it ignores everything while the coach
+            // talks. With the camera in charge, the spec says to still count a sound that a wrist push backs up.
+            if requiresConfirmation {
+                heardDuringSpeech += 1
+            } else {
+                rejectedSpeech += 1
+                note(.speech)
+                return false
+            }
         }
         if config.minRiseRatio > 0, onset.riseRatio > 0, onset.riseRatio < config.minRiseRatio {
             rejectedSlow += 1

@@ -52,6 +52,7 @@ struct BounceDebugSection: View {
                 Text("Lost-ball gaps: \(stats.lostBalls), \(report.gaps.filter(\.isLost).map { String(format: "%.1fs at %.1fs", $0.seconds, $0.time - $0.seconds) }.joined(separator: ", "))")
                 Text("Heard \(diagnostics.heard), counted \(stats.count); \(diagnostics.unconfirmed) had no wrist push behind them (talking, other noise or a missed push)")
                 Text("Counted only because the sound was loud: \(diagnostics.confirmedByLoudness)")
+                Text("Heard while the coach spoke (the camera decided): \(diagnostics.duringSpeech)")
                 Text("Ignored sounds: \(diagnostics.rejectedVoice) as voice, \(diagnostics.rejectedSpeech) while the coach spoke")
             }
             .font(.footnote)
