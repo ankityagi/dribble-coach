@@ -6,6 +6,7 @@ public enum OnsetVerdict: String, Codable, Sendable {
     case voice
     case speech
     case echo
+    case slowRise
 }
 
 /// One sound the detector found during a drill, with what the counter decided.
@@ -15,12 +16,19 @@ public struct OnsetRecord: Equatable, Codable, Sendable {
     public let verdict: OnsetVerdict
     public let lowEnergy: Double
     public let voiceRatio: Double
+    /// Energy over the previous 5 ms hop's energy. Large for a sharp bounce, small for speech.
+    public let riseRatio: Double
+    /// Energy over the detection threshold.
+    public let margin: Double
 
-    public init(time: Double, verdict: OnsetVerdict, lowEnergy: Double, voiceRatio: Double) {
+    public init(time: Double, verdict: OnsetVerdict, lowEnergy: Double, voiceRatio: Double,
+                riseRatio: Double = 0, margin: Double = 0) {
         self.time = time
         self.verdict = verdict
         self.lowEnergy = lowEnergy
         self.voiceRatio = voiceRatio
+        self.riseRatio = riseRatio
+        self.margin = margin
     }
 }
 

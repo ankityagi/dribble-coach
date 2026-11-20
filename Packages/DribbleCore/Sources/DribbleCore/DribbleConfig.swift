@@ -103,6 +103,9 @@ public struct DribbleConfig: Codable, Equatable, Sendable {
     public var refractorySeconds: Double = 0.12
     /// High-band energy divided by low-band energy above which an onset is tagged likely voice.
     public var voiceRatio: Double = 1.0
+    /// Onsets whose energy rose less than this many times over the hop before are slow builds, like speech, and
+    /// are ignored. 0 turns the check off.
+    public var minRiseRatio: Double = 0
     /// A sound within this long after a much louder one is the first sound's echo or rattle, not a new bounce.
     public var echoWindowSeconds: Double = 0.3
     /// How many times louder the earlier sound must be for the later one to count as its echo.

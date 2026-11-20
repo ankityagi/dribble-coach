@@ -16,6 +16,7 @@ public final class BounceCounter {
     public private(set) var rejectedVoice = 0
     public private(set) var rejectedSpeech = 0
     public private(set) var rejectedEcho = 0
+    public private(set) var rejectedSlow = 0
     /// Recent onsets of any verdict, for the echo rule.
     private var recent: [(time: Double, energy: Double)] = []
     /// Every onset heard inside the drill window and what was done with it, for Debug mode.
@@ -33,6 +34,7 @@ public final class BounceCounter {
         rejectedVoice = 0
         rejectedSpeech = 0
         rejectedEcho = 0
+        rejectedSlow = 0
         recent = []
         onsetLog = []
     }
@@ -51,7 +53,9 @@ public final class BounceCounter {
         guard onset.time >= start, onset.time <= end else { return false }
         func note(_ verdict: OnsetVerdict) {
             onsetLog.append(OnsetRecord(time: onset.time - start, verdict: verdict,
-                                        lowEnergy: onset.lowEnergy, voiceRatio: onset.voiceRatio))
+                                        lowEnergy: onset.lowEnergy, voiceRatio: onset.voiceRatio,
+                                        riseRatio: onset.riseRatio,
+                                        margin: onset.threshold > 0 ? onset.lowEnergy / onset.threshold : 0))
         }
         // The loudest sound just before this one, whatever was decided about it.
         recent.removeAll { onset.time - $0.time > config.echoWindowSeconds }
@@ -61,6 +65,11 @@ public final class BounceCounter {
         if speaking || onset.time < mutedUntil {
             rejectedSpeech += 1
             note(.speech)
+            return false
+        }
+        if config.minRiseRatio > 0, onset.riseRatio > 0, onset.riseRatio < config.minRiseRatio {
+            rejectedSlow += 1
+            note(.slowRise)
             return false
         }
         if onset.isLikelyVoice {

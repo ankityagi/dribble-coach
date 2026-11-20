@@ -57,4 +57,36 @@ final class BounceDiagnosticsTests: XCTestCase {
         counter.ingest(Onset(time: 2.0, lowEnergy: 2e-4, voiceRatio: 0.3, isLikelyVoice: false))
         XCTAssertEqual(counter.onsetLog.map(\.verdict), [.voice, .echo, .accepted, .accepted])
     }
+
+    func testSlowRisingSoundIsIgnoredOnlyWhenTheCheckIsOn() {
+        var config = DribbleConfig()
+        config.minRiseRatio = 8
+        let counter = BounceCounter(config: config)
+        counter.begin(at: 0, duration: 30)
+        counter.ingest(Onset(time: 1.0, lowEnergy: 4.2e-5, voiceRatio: 0.1, isLikelyVoice: false, riseRatio: 1.3, threshold: 4e-5))
+        counter.ingest(Onset(time: 2.0, lowEnergy: 6e-4, voiceRatio: 0.1, isLikelyVoice: false, riseRatio: 90, threshold: 4e-5))
+        XCTAssertEqual(counter.onsetLog.map(\.verdict), [.slowRise, .accepted])
+
+        let off = BounceCounter()
+        off.begin(at: 0, duration: 30)
+        off.ingest(Onset(time: 1.0, lowEnergy: 4.2e-5, voiceRatio: 0.1, isLikelyVoice: false, riseRatio: 1.3, threshold: 4e-5))
+        XCTAssertEqual(off.onsetLog.map(\.verdict), [.accepted])
+    }
+
+    func testDetectorReportsASharpRiseForAThumpAndASmallOneForAGradualBuildUp() {
+        let rate = 48_000.0
+        func run(_ build: (Int) -> Float) -> Onset? {
+            let detector = OnsetDetector(sampleRate: rate)
+            var samples = [Float](repeating: 0, count: Int(rate * 0.5))
+            for i in 0..<Int(rate * 0.3) {
+                samples[Int(rate * 0.2) + i] = build(i)
+            }
+            return detector.process(samples, startTime: 0).first
+        }
+        let thump = run { i in Float(0.6 * exp(-Double(i) / 800) * sin(2 * .pi * 150 * Double(i) / rate)) }
+        let swell = run { i in Float(min(1, Double(i) / 6000) * 0.05 * sin(2 * .pi * 150 * Double(i) / rate)) }
+        XCTAssertNotNil(thump)
+        XCTAssertNotNil(swell)
+        XCTAssertGreaterThan(thump?.riseRatio ?? 0, (swell?.riseRatio ?? 0) * 5)
+    }
 }

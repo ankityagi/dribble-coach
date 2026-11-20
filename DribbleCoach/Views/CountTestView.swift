@@ -77,7 +77,7 @@ final class CountTestController {
 
     private func handle(_ onset: Onset) {
         guard running else { return }
-        lastOnsetInfo = String(format: "energy %.1e, voice ratio %.2f", onset.lowEnergy, onset.voiceRatio)
+        lastOnsetInfo = String(format: "energy %.1e, rise x%.0f, voice ratio %.2f", onset.lowEnergy, onset.riseRatio, onset.voiceRatio)
             + (onset.isLikelyVoice ? " (voice, ignored)" : "")
         if counter.ingest(onset) { beat += 1 }
         rejectedVoice = counter.rejectedVoice

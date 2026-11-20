@@ -10,12 +10,20 @@ public struct Onset: Equatable, Sendable {
     public let voiceRatio: Double
     /// True when the hop looks more like a voice than a ball thump.
     public let isLikelyVoice: Bool
+    /// Low-band energy of this hop divided by the hop before it. A bounce jumps from quiet to loud in one
+    /// 5 ms hop, so this is large; speech builds up gradually, so it is small. 0 when not measured.
+    public let riseRatio: Double
+    /// The threshold this hop beat, so the margin (energy / threshold) can be checked. 0 when not measured.
+    public let threshold: Double
 
-    public init(time: Double, lowEnergy: Double, voiceRatio: Double, isLikelyVoice: Bool) {
+    public init(time: Double, lowEnergy: Double, voiceRatio: Double, isLikelyVoice: Bool,
+                riseRatio: Double = 0, threshold: Double = 0) {
         self.time = time
         self.lowEnergy = lowEnergy
         self.voiceRatio = voiceRatio
         self.isLikelyVoice = isLikelyVoice
+        self.riseRatio = riseRatio
+        self.threshold = threshold
     }
 }
 
@@ -45,6 +53,7 @@ public final class OnsetDetector {
     private var historyIndex = 0
     private var wasAbove = false
     private var lastOnsetTime = -Double.infinity
+    private var previousLow = 0.0
 
     public init(sampleRate: Double, config: DribbleConfig = DribbleConfig()) {
         self.config = config
@@ -94,8 +103,10 @@ public final class OnsetDetector {
         let highEnergy = highSum / Double(hopSize)
         let threshold = currentThreshold
         let isAbove = lowEnergy > threshold
+        let previous = previousLow
         defer {
             wasAbove = isAbove
+            previousLow = lowEnergy
             push(lowEnergy)
         }
 
@@ -107,7 +118,9 @@ public final class OnsetDetector {
         return Onset(time: hopStartTime,
                      lowEnergy: lowEnergy,
                      voiceRatio: ratio,
-                     isLikelyVoice: ratio > config.voiceRatio)
+                     isLikelyVoice: ratio > config.voiceRatio,
+                     riseRatio: lowEnergy / max(previous, 1e-12),
+                     threshold: threshold)
     }
 
     private func push(_ value: Double) {
