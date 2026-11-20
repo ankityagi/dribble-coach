@@ -126,6 +126,7 @@ struct SettingsView: View {
                 try? modelContext.delete(model: SessionRecord.self)
                 try? modelContext.save()
                 PoseLogger.deleteAll()
+                BounceLogger.deleteAll()
             }
         }
     }

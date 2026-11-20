@@ -15,6 +15,12 @@ public final class BounceCounter {
     public private(set) var bounceTimes: [Double] = []
     public private(set) var rejectedVoice = 0
     public private(set) var rejectedSpeech = 0
+    public private(set) var rejectedEcho = 0
+    public private(set) var rejectedSlow = 0
+    /// Recent onsets of any verdict, for the echo rule.
+    private var recent: [(time: Double, energy: Double)] = []
+    /// Every onset heard inside the drill window and what was done with it, for Debug mode.
+    public private(set) var onsetLog: [OnsetRecord] = []
 
     public init(config: DribbleConfig = DribbleConfig()) {
         self.config = config
@@ -27,6 +33,10 @@ public final class BounceCounter {
         bounceTimes = []
         rejectedVoice = 0
         rejectedSpeech = 0
+        rejectedEcho = 0
+        rejectedSlow = 0
+        recent = []
+        onsetLog = []
     }
 
     /// Call when the coach starts or stops speaking, with the host time.
@@ -41,15 +51,39 @@ public final class BounceCounter {
     @discardableResult
     public func ingest(_ onset: Onset) -> Bool {
         guard onset.time >= start, onset.time <= end else { return false }
+        func note(_ verdict: OnsetVerdict) {
+            onsetLog.append(OnsetRecord(time: onset.time - start, verdict: verdict,
+                                        lowEnergy: onset.lowEnergy, voiceRatio: onset.voiceRatio,
+                                        riseRatio: onset.riseRatio,
+                                        margin: onset.threshold > 0 ? onset.lowEnergy / onset.threshold : 0))
+        }
+        // The loudest sound just before this one, whatever was decided about it.
+        recent.removeAll { onset.time - $0.time > config.echoWindowSeconds }
+        let louderBefore = recent.map(\.energy).max() ?? 0
+        recent.append((onset.time, onset.lowEnergy))
+
         if speaking || onset.time < mutedUntil {
             rejectedSpeech += 1
+            note(.speech)
+            return false
+        }
+        if config.minRiseRatio > 0, onset.riseRatio > 0, onset.riseRatio < config.minRiseRatio {
+            rejectedSlow += 1
+            note(.slowRise)
             return false
         }
         if onset.isLikelyVoice {
             rejectedVoice += 1
+            note(.voice)
+            return false
+        }
+        if louderBefore > onset.lowEnergy * config.echoEnergyRatio {
+            rejectedEcho += 1
+            note(.echo)
             return false
         }
         bounceTimes.append(onset.time)
+        note(.accepted)
         return true
     }
 
@@ -63,6 +97,9 @@ public final class BounceCounter {
     public func drillStats(now: Double) -> RhythmStats {
         Rhythm.stats(times: bounceTimes, start: start, end: min(now, end), config: config)
     }
+
+    /// Time the current drill window started, on the host clock.
+    public var windowStart: Double { start }
 
     /// Seconds since the last accepted bounce, or since the drill started if none yet.
     public func secondsSinceLastBounce(now: Double) -> Double {

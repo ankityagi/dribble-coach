@@ -42,6 +42,15 @@ enum SettingsKey {
     static let debugMode = "debugMode"
 }
 
+/// What the counter heard during a drill, for the Debug-mode summary and the bounce log.
+struct DrillDiagnostics: Equatable {
+    let gapReport: GapReport
+    let onsets: [OnsetRecord]
+    let rejectedVoice: Int
+    let rejectedSpeech: Int
+    let spread: Double?
+}
+
 /// The outcome of one finished drill, shown on the summary screen.
 struct DrillResult: Equatable {
     let drill: Drill
@@ -50,6 +59,7 @@ struct DrillResult: Equatable {
     let stats: RhythmStats
     let parts: PartScores
     let score: ScoreResult
+    var diagnostics: DrillDiagnostics? = nil
 }
 
 /// A saved drill, per the spec's Session record.
